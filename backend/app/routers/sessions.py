@@ -1,8 +1,9 @@
+import json
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlmodel import Session, col, select
 
 from ..db import get_session
@@ -14,6 +15,8 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 # A session is invalid if the person was out of frame for longer than this in total.
 MAX_OUT_OF_FRAME_S = 3.0
+# Metrics are summary numbers only (no landmark traces), so they stay small.
+MAX_JSON_BYTES = 20_000
 
 
 class RepEventIn(BaseModel):
@@ -31,7 +34,14 @@ class SessionIn(BaseModel):
     used_arms: bool = False
     quality_flags: dict[str, Any] = {}
     metrics: dict[str, Any] = {}
-    rep_events: list[RepEventIn] = []
+    rep_events: list[RepEventIn] = Field(default=[], max_length=60)
+
+    @field_validator("quality_flags", "metrics")
+    @classmethod
+    def _small_json(cls, v: dict[str, Any]) -> dict[str, Any]:
+        if len(json.dumps(v)) > MAX_JSON_BYTES:
+            raise ValueError(f"must be under {MAX_JSON_BYTES} bytes")
+        return v
 
 
 class SessionOut(BaseModel):

@@ -52,3 +52,16 @@ def test_out_of_frame_invalidates(authed):
     ).json()
     assert body["valid"] is False
     assert body["below_threshold"] is None
+
+
+def test_metrics_round_trip_and_size_limit(authed):
+    _profile(authed)
+    metrics = {"version": 1, "speed": {"mean_s": 2.4}, "quality_score": 92}
+    body = authed.post(
+        "/api/sessions", json={"started_at": "2026-01-01T10:00:00Z", "raw_reps": 12, "metrics": metrics}
+    ).json()
+    assert authed.get(f"/api/sessions/{body['id']}").json()["metrics"] == metrics
+
+    huge = {"trace": [0.123456] * 5000}
+    r = authed.post("/api/sessions", json={"started_at": "2026-01-01T10:00:00Z", "raw_reps": 12, "metrics": huge})
+    assert r.status_code == 422

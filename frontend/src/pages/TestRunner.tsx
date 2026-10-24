@@ -1,6 +1,7 @@
 import { DrawingUtils, PoseLandmarker, type NormalizedLandmark } from '@mediapipe/tasks-vision'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { computeMetrics, type FrameSample } from '../analysis/metrics'
 import { api } from '../api/client'
 import { analyzeFrame, FormMonitor, type FrameAnalysis } from '../pose/formChecks'
 import { dist, LM } from '../pose/geometry'
@@ -67,6 +68,7 @@ export default function TestRunner() {
     startedAt: new Date(),
     lastFrame: 0,
     cues: new Set<string>(),
+    samples: [] as FrameSample[],
   })
   const countdownTimer = useRef<number | undefined>(undefined)
   const readySince = useRef<number | null>(null)
@@ -90,7 +92,7 @@ export default function TestRunner() {
         raw_reps: r.counter.count,
         used_arms: flags.used_arms,
         quality_flags: flags,
-        metrics: {},
+        metrics: computeMetrics(r.samples, r.counter.events, flags),
         rep_events: r.counter.events,
       })
       navigate(`/results/${saved.id}`)
@@ -137,7 +139,17 @@ export default function TestRunner() {
       r.lastFrame = now
 
       const issue = r.monitor.update(dt, poseCount, frame)
-      if (frame?.bodyVisible && r.counter.update(t, frame.extension)) setCount(r.counter.count)
+      if (frame?.bodyVisible) {
+        if (r.counter.update(t, frame.extension)) setCount(r.counter.count)
+        r.samples.push({
+          t,
+          state: r.counter.state,
+          count: r.counter.count,
+          kneeDeg: frame.kneeDeg,
+          trunkLeanDeg: frame.trunkLeanDeg,
+          sway: frame.sway,
+        })
+      }
 
       if (issue === 'out_of_frame') speakThrottled('Please stay in view of the camera.')
       else if (issue === 'arms') speakThrottled('Please keep your arms crossed.')
@@ -261,6 +273,7 @@ export default function TestRunner() {
         startedAt: new Date(),
         lastFrame: 0,
         cues: new Set(),
+        samples: [],
       }
       setCount(0)
       setRemaining(TEST_SECONDS)

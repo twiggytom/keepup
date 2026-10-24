@@ -1,3 +1,4 @@
+import type { SessionMetrics } from '../analysis/metrics'
 import type { RepEvent } from '../pose/repCounter'
 import type { QualityFlags } from '../pose/formChecks'
 
@@ -26,7 +27,7 @@ export interface SessionIn {
   raw_reps: number
   used_arms: boolean
   quality_flags: QualityFlags
-  metrics: Record<string, unknown>
+  metrics: SessionMetrics
   rep_events: RepEvent[]
 }
 
@@ -44,7 +45,7 @@ export interface TestSession {
   norm_applicable: boolean
   below_threshold: boolean | null
   quality_flags: Partial<QualityFlags>
-  metrics: Record<string, unknown>
+  metrics: SessionMetrics | Record<string, never> // empty for sessions recorded before Phase 2
   rep_events: RepEvent[]
 }
 
