@@ -6,6 +6,8 @@
  * Separate enter/exit thresholds give hysteresis so pose jitter cannot double count.
  */
 
+import { REP } from '../config/thresholds'
+
 export type RepState = 'sitting' | 'rising' | 'standing' | 'descending'
 
 export interface RepEvent {
@@ -17,16 +19,6 @@ export interface RepEvent {
   partial: boolean
 }
 
-export const THRESHOLDS = {
-  sitEnter: 110, // at or below: seated
-  sitExit: 120, // above: has started rising
-  standEnter: 155, // at or above: fully standing (a rep)
-  standExit: 145, // below: has started descending
-}
-
-const EMA_ALPHA = 0.4
-const DEFAULT_SIT = 90
-const DEFAULT_STAND = 170
 
 export class RepCounter {
   state: RepState = 'sitting'
@@ -47,9 +39,9 @@ export class RepCounter {
 
   /** Feed one frame. Returns true when a new rep was counted on this frame. */
   update(t: number, extension: number): boolean {
-    this.smoothed = this.smoothed === null ? extension : EMA_ALPHA * extension + (1 - EMA_ALPHA) * this.smoothed
+    this.smoothed = this.smoothed === null ? extension : REP.emaAlpha * extension + (1 - REP.emaAlpha) * this.smoothed
     const a = this.smoothed
-    const th = THRESHOLDS
+    const th = REP
 
     switch (this.state) {
       case 'sitting':
@@ -116,8 +108,8 @@ export class RepCounter {
    */
   finish(t: number): void {
     if (this.state !== 'rising' || this.smoothed === null) return
-    const sit = this.sitN ? this.sitSum / this.sitN : DEFAULT_SIT
-    const stand = this.peakN ? this.peakSum / this.peakN : DEFAULT_STAND
+    const sit = this.sitN ? this.sitSum / this.sitN : REP.defaultSitDeg
+    const stand = this.peakN ? this.peakSum / this.peakN : REP.defaultStandDeg
     if (this.smoothed > (sit + stand) / 2) {
       this.events.push({
         index: this.events.length,

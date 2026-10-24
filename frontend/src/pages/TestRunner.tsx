@@ -5,7 +5,8 @@ import { api } from '../api/client'
 import { analyzeFrame, FormMonitor, type FrameAnalysis } from '../pose/formChecks'
 import { dist, LM } from '../pose/geometry'
 import { getPoseLandmarker } from '../pose/landmarker'
-import { RepCounter, THRESHOLDS } from '../pose/repCounter'
+import { REP } from '../config/thresholds'
+import { RepCounter } from '../pose/repCounter'
 import { speak, speakThrottled, stopSpeaking } from '../voice/speech'
 
 type Phase = 'loading' | 'error' | 'setup' | 'countdown' | 'running' | 'saving'
@@ -105,7 +106,7 @@ export default function TestRunner() {
           visible: frame.bodyVisible,
           sideOn: frame.sideOn,
           armsCrossed: frame.armsCrossed,
-          seated: frame.bodyVisible && frame.extension <= THRESHOLDS.sitEnter + 10,
+          seated: frame.bodyVisible && frame.extension <= REP.sitEnter + 10,
         }
       : NO_CHECKS
     setChecks((prev) => (Object.keys(c) as (keyof Checks)[]).some((k) => prev[k] !== c[k]) ? c : prev)
@@ -182,7 +183,7 @@ export default function TestRunner() {
       const now = performance.now()
       const result = landmarker.detectForVideo(video, now)
       const pose = primaryPose(result.landmarks)
-      const frame = pose ? analyzeFrame(pose) : null
+      const frame = pose ? analyzeFrame(pose, video.videoWidth / video.videoHeight) : null
 
       if (canvas.width !== video.videoWidth) {
         canvas.width = video.videoWidth
