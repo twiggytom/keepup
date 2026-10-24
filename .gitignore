@@ -8,3 +8,9 @@ node_modules/
 
 __pycache__/
 
+
+dist/
+
+.env.local
+
+CLAUDE.local.md
