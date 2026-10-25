@@ -132,7 +132,7 @@ button.link { background: none; border: none; color: var(--primary); text-decora
 .tile-text { font-size: 1.1rem; font-weight: 700; margin: 0.2rem 0; }
 .tile-note { font-size: 0.85rem; color: var(--muted); }
 .note { background: var(--warn-bg); border-radius: 10px; padding: 0.6rem 0.9rem; }
-.chart { font-size: 0.8rem; }
+.chart { font-size: 0.8rem; position: relative; }
 .chart-tooltip { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.7rem; font-size: 0.9rem; }
 details { margin-top: 0.5rem; }
 summary { cursor: pointer; color: var(--primary); font-weight: 600; }
@@ -152,3 +152,4 @@ summary { cursor: pointer; color: var(--primary); font-weight: 600; }
 .pager { display: flex; gap: 0.4rem; }
 .pager button { min-width: 56px; font-size: 1.2rem; }
 .window-label { font-size: 0.85rem; margin: 0.25rem 0 0.5rem; }
+.chart-tooltip.floating { position: absolute; transform: translateY(-50%); pointer-events: none; z-index: 1; }

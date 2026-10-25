@@ -5,10 +5,8 @@ import {
   Line,
   ResponsiveContainer,
   Scatter,
-  Tooltip,
   XAxis,
   YAxis,
-  type TooltipContentProps,
 } from 'recharts'
 import type { Exclusion, Trend, TrendPoint, Trends } from '../api/client'
 import { isFullView, panBy, zoomAt, type Domain } from './zoom'
@@ -18,6 +16,8 @@ const MIN_PAD_MS = 2 * 60_000
 const SINGLE_TEST_PAD_MS = 30 * 60_000
 const ZOOM_STEP = 2 // the − and + buttons halve or double the visible time
 const PAN_FRACTION = 0.8 // arrows move a zoomed view by this share of its width
+const HOVER_RADIUS_PX = 14 // details show only when the cursor is this close to a point
+const TOOLTIP_WIDTH_PX = 240
 
 type Range = 'day' | 'week' | 'month' | 'year' | 'all'
 
@@ -28,6 +28,12 @@ const RANGES: { key: Range; label: string; ms: number | null }[] = [
   { key: 'year', label: 'Year', ms: 365 * DAY_MS },
   { key: 'all', label: 'All', ms: null },
 ]
+
+/** A fixed-width window centred on the tests it contains. */
+function centredDomain(first: number, last: number, widthMs: number): Domain {
+  const mid = (first + last) / 2
+  return [mid - widthMs / 2, mid + widthMs / 2]
+}
 
 /** Fit the axis to the shown tests, padded by 5% so edge points are not on the axis. */
 function fitDomain(first: number, last: number): Domain {
@@ -118,13 +124,21 @@ function buildRows(points: TrendPoint[], reps: Trend): Row[] {
   return rows
 }
 
-function PointTooltip({ active, payload }: TooltipContentProps<number, string>) {
-  if (!active || !payload?.length) return null
-  const r = payload[0].payload as Row
-  const p = r.point
+interface Hover {
+  row: Row
+  x: number // point position in chart pixels
+  y: number
+}
+
+function PointTooltip({ hover, chartWidth }: { hover: Hover; chartWidth: number }) {
+  const p = hover.row.point
+  const flip = hover.x + 16 + TOOLTIP_WIDTH_PX > chartWidth
   return (
-    <div className="chart-tooltip">
-      <strong>{new Date(p.started_at).toLocaleString()}</strong>
+    <div
+      className="chart-tooltip floating"
+      style={{ top: hover.y, left: flip ? hover.x - 16 - TOOLTIP_WIDTH_PX : hover.x + 16, width: TOOLTIP_WIDTH_PX }}
+    >
+      <strong>{new Date(p.started_at).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</strong>
       <div>{p.reps} stands</div>
       {p.cdc_threshold !== null && <div className="muted">CDC guide: {p.cdc_threshold}</div>}
       {p.quality_score !== null && <div className="muted">Recording quality {p.quality_score}/100</div>}
@@ -133,13 +147,37 @@ function PointTooltip({ active, payload }: TooltipContentProps<number, string>) 
   )
 }
 
-const hollowDot = (props: { cx?: number; cy?: number }) => (
-  <circle cx={props.cx} cy={props.cy} r={5} fill="var(--surface)" stroke="var(--muted)" strokeWidth={2} />
-)
+interface DotProps {
+  cx?: number
+  cy?: number
+  payload?: Row
+}
 
-const filledDot = (props: { cx?: number; cy?: number }) => (
-  <circle cx={props.cx} cy={props.cy} r={6} fill="var(--chart)" stroke="var(--surface)" strokeWidth={2} />
-)
+/** A point plus a larger invisible hit circle that shows its details on hover or tap. */
+function dotShape(filled: boolean, setHover: (h: Hover | null) => void) {
+  return function Dot({ cx = 0, cy = 0, payload }: DotProps) {
+    const show = () => payload && setHover({ row: payload, x: cx, y: cy })
+    return (
+      <g>
+        {filled ? (
+          <circle cx={cx} cy={cy} r={6} fill="var(--chart)" stroke="var(--surface)" strokeWidth={2} />
+        ) : (
+          <circle cx={cx} cy={cy} r={5} fill="var(--surface)" stroke="var(--muted)" strokeWidth={2} />
+        )}
+        <circle
+          cx={cx}
+          cy={cy}
+          r={HOVER_RADIUS_PX}
+          fill="transparent"
+          style={{ cursor: 'pointer' }}
+          onMouseEnter={show}
+          onMouseLeave={() => setHover(null)}
+          onClick={show}
+        />
+      </g>
+    )
+  }
+}
 
 export default function TrendSummary({ trends }: { trends: Trends }) {
   const rows = buildRows(trends.points, trends.reps)
@@ -148,8 +186,8 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
   const hasTrend = rows.some((r) => r.trend !== undefined)
   const s = (n: number) => `${n.toFixed(1)} s`
 
-  // A range picks which tests are shown: those in the `windowMs` before `windowEnd`, which is
-  // always a test's time. The axis then fits the shown tests so close-together tests spread out.
+  // A range picks a fixed-width window (a day, week, month or year) around the tests in the
+  // `windowMs` before `windowEnd`, which is always a test's time. "All" fits every test.
   const [range, setRange] = useState<Range>('all')
   const [windowEnd, setWindowEnd] = useState<number | null>(null) // null = the latest test
   const windowMs = RANGES.find((r) => r.key === range)!.ms
@@ -157,25 +195,36 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
   const start = windowMs === null ? -Infinity : end - windowMs
   const inWindow = rows.filter((r) => r.t >= start && r.t <= end)
 
-  // Zooming (pinch, Ctrl + scroll, or − / +) overrides the range's view until reset.
+  const windowFirst = inWindow[0].t
+  const windowLast = inWindow[inWindow.length - 1].t
+  const base: Domain =
+    windowMs === null ? fitDomain(windowFirst, windowLast) : centredDomain(windowFirst, windowLast, windowMs)
+
+  // Zooming (pinch, Ctrl + scroll, or − / +) overrides the range's view until reset. It can
+  // reach anywhere in the history, or the whole range window if that is wider.
   const [zoom, setZoom] = useState<Domain | null>(null)
-  const bounds = fitDomain(rows[0].t, rows[rows.length - 1].t)
-  const domain = zoom ?? fitDomain(inWindow[0].t, inWindow[inWindow.length - 1].t)
-  const shown = zoom ? rows.filter((r) => r.t >= domain[0] && r.t <= domain[1]) : inWindow
+  const all = fitDomain(rows[0].t, rows[rows.length - 1].t)
+  const bounds: Domain = [Math.min(all[0], base[0]), Math.max(all[1], base[1])]
+  const domain = zoom ?? base
+  const shown = rows.filter((r) => r.t >= domain[0] && r.t <= domain[1])
   const ticks = TICK_FRACTIONS.map((f) => domain[0] + (domain[1] - domain[0]) * f)
   const tickOpts = tickFormat(domain)
   const earlier = rows.filter((r) => r.t < start)
   const later = rows.filter((r) => r.t > end)
 
   const chartRef = useRef<HTMLDivElement>(null)
-  const view = useRef({ domain, bounds })
+  const view = useRef({ domain, bounds, base })
   useEffect(() => {
-    view.current = { domain, bounds }
+    view.current = { domain, bounds, base }
   })
 
+  const [hover, setHover] = useState<Hover | null>(null)
+
   const applyZoom = (d: Domain) => {
-    view.current.domain = d // wheel events can arrive faster than re-renders
-    setZoom(isFullView(d, view.current.bounds) ? null : d)
+    const v = view.current
+    v.domain = d // wheel events can arrive faster than re-renders
+    setZoom(isFullView(d, v.bounds) && isFullView(v.base, v.bounds) ? null : d)
+    setHover(null) // the point has moved
   }
 
   // Gestures: pinch or Ctrl + wheel zooms at the cursor; a horizontal swipe or Shift + wheel pans.
@@ -233,6 +282,7 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
     setRange(r)
     setWindowEnd(null)
     setZoom(null)
+    setHover(null)
   }
 
   function goEarlier() {
@@ -250,6 +300,15 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
   const canGoEarlier = zoom ? domain[0] > bounds[0] : earlier.length > 0
   const canGoLater = zoom ? domain[1] < bounds[1] : later.length > 0
   const fullyZoomedIn = domain[1] - domain[0] <= Math.min(4 * 60_000, bounds[1] - bounds[0])
+
+  // Lines get extra points at the view's edges so the CDC guide spans the whole window.
+  const lineRows = [
+    { t: Math.min(domain[0], rows[0].t), cdc: rows[0].cdc },
+    ...rows.map((r) => ({ t: r.t, cdc: r.cdc, trend: r.trend })),
+    { t: Math.max(domain[1], rows[rows.length - 1].t), cdc: rows[rows.length - 1].cdc },
+  ]
+  const Hollow = dotShape(false, setHover)
+  const Filled = dotShape(true, setHover)
 
   return (
     <section className="trends">
@@ -290,7 +349,7 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
           ))}
         </div>
         <div className="pager">
-          <button onClick={() => applyZoom(zoomAt(domain, ZOOM_STEP, 0.5, bounds))} disabled={!zoom} aria-label="Zoom out">
+          <button onClick={() => applyZoom(zoomAt(domain, ZOOM_STEP, 0.5, bounds))} disabled={isFullView(domain, bounds)} aria-label="Zoom out">
             −
           </button>
           <button onClick={() => applyZoom(zoomAt(domain, 1 / ZOOM_STEP, 0.5, bounds))} disabled={fullyZoomedIn} aria-label="Zoom in">
@@ -309,13 +368,13 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
         </div>
       </div>
       <p className="muted window-label">
-        {zoom ? formatSpan(domain[0], domain[1]) : shown.length ? formatSpan(shown[0].t, shown[shown.length - 1].t) : ''}
+        {zoom || windowMs !== null ? formatSpan(domain[0], domain[1]) : formatSpan(windowFirst, windowLast)}
         {' · '}
         {shown.length} {shown.length === 1 ? 'test' : 'tests'}
         {zoom && (
           <>
             {' · '}
-            <button className="link" onClick={() => setZoom(null)}>
+            <button className="link" onClick={() => applyZoom(base)}>
               Reset zoom
             </button>
           </>
@@ -340,9 +399,9 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
           <span className="swatch line guide" /> CDC guide: below this is below average for your age and sex
         </li>
       </ul>
-      <div className="chart" ref={chartRef} role="img" aria-label="Chart of stands in 30 seconds for each test over time, with trend line and CDC guide">
+      <div className="chart" ref={chartRef} onMouseLeave={() => setHover(null)} role="img" aria-label="Chart of stands in 30 seconds for each test over time, with trend line and CDC guide">
         <ResponsiveContainer width="100%" height={260}>
-          <ComposedChart data={rows} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
+          <ComposedChart data={lineRows} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
             <CartesianGrid vertical={false} stroke="var(--grid)" />
             <XAxis
               dataKey="t"
@@ -365,7 +424,6 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
               axisLine={false}
               tick={{ fill: 'var(--muted)' }}
             />
-            <Tooltip content={PointTooltip} cursor={{ stroke: 'var(--grid)' }} />
             <Line
               dataKey="cdc"
               type="stepAfter"
@@ -384,10 +442,11 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
               activeDot={false}
               isAnimationActive={false}
             />
-            <Scatter data={rows.filter((r) => !r.point.in_fit)} dataKey="reps" shape={hollowDot} isAnimationActive={false} />
-            <Scatter data={rows.filter((r) => r.point.in_fit)} dataKey="reps" shape={filledDot} isAnimationActive={false} />
+            <Scatter data={rows.filter((r) => !r.point.in_fit)} dataKey="reps" shape={Hollow} isAnimationActive={false} />
+            <Scatter data={rows.filter((r) => r.point.in_fit)} dataKey="reps" shape={Filled} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
+        {hover && <PointTooltip hover={hover} chartWidth={chartRef.current?.clientWidth ?? 0} />}
       </div>
     </section>
   )
