@@ -136,3 +136,13 @@ button.link { background: none; border: none; color: var(--primary); text-decora
 .chart-tooltip { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.7rem; font-size: 0.9rem; }
 details { margin-top: 0.5rem; }
 summary { cursor: pointer; color: var(--primary); font-weight: 600; }
+
+/* Trends */
+.trends { margin-bottom: 1.5rem; }
+.legend { list-style: none; padding: 0; margin: 0 0 0.5rem; display: flex; flex-wrap: wrap; gap: 0.4rem 1.25rem; font-size: 0.85rem; color: var(--muted); }
+.legend li { display: flex; align-items: center; gap: 0.4rem; }
+.swatch { display: inline-block; flex: none; }
+.swatch.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--chart); }
+.swatch.dot.hollow { background: var(--surface); border: 2px solid var(--muted); }
+.swatch.line { width: 18px; height: 2px; background: var(--chart); }
+.swatch.line.guide { background: var(--muted); }
