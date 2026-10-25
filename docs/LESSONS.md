@@ -9,3 +9,4 @@ Format: - YYYY-MM-DD: what went wrong or what to watch for -> fix
 - 2026-10-24: Single trials are noisy. -> Never alert or draw conclusions from one test; use trends and the noise band.
 - 2026-10-24: Google Cloud Vision API does not do body pose. -> Use MediaPipe Pose Landmarker.
 - 2026-10-24: Pose output jitters frame to frame. -> Smooth before thresholding and use hysteresis (separate enter and exit thresholds) in the state machine.
+- 2026-10-24: MediaPipe normalizes x by frame width and y by height, so angles and distances on a 16:9 frame are skewed. -> Multiply x by width/height before any geometry (analyzeFrame takes the aspect ratio).
