@@ -1,4 +1,4 @@
-# PLAN.md: chair stand test web app (hackathon MVP)
+# PLAN.md: chair stand test web app
 
 Read this whole file before writing code. Use plan mode to propose the file structure and milestone breakdown, confirm with the user, then build milestone by milestone. Ask before changing any decision marked FIXED.
 
