@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   CartesianGrid,
   ComposedChart,
@@ -11,9 +11,13 @@ import {
   type TooltipContentProps,
 } from 'recharts'
 import type { Exclusion, Trend, TrendPoint, Trends } from '../api/client'
+import { isFullView, panBy, zoomAt, type Domain } from './zoom'
 
 const DAY_MS = 86_400_000
-const MIN_PAD_MS = 30 * 60_000
+const MIN_PAD_MS = 2 * 60_000
+const SINGLE_TEST_PAD_MS = 30 * 60_000
+const ZOOM_STEP = 2 // the − and + buttons halve or double the visible time
+const PAN_FRACTION = 0.8 // arrows move a zoomed view by this share of its width
 
 type Range = 'day' | 'week' | 'month' | 'year' | 'all'
 
@@ -25,15 +29,16 @@ const RANGES: { key: Range; label: string; ms: number | null }[] = [
   { key: 'all', label: 'All', ms: null },
 ]
 
-/** Fit the axis to the shown tests, padded by 5% (at least 30 minutes) so edge points are not on the axis. */
-function fitDomain(first: number, last: number): [number, number] {
-  const pad = Math.max((last - first) * 0.05, MIN_PAD_MS)
+/** Fit the axis to the shown tests, padded by 5% so edge points are not on the axis. */
+function fitDomain(first: number, last: number): Domain {
+  const pad = first === last ? SINGLE_TEST_PAD_MS : Math.max((last - first) * 0.05, MIN_PAD_MS)
   return [first - pad, last + pad]
 }
 
 const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString()
 
-function tickFormat([start, end]: [number, number]): Intl.DateTimeFormatOptions {
+function tickFormat([start, end]: Domain): Intl.DateTimeFormatOptions {
+  if (end - start <= 15 * 60_000) return { hour: 'numeric', minute: '2-digit', second: '2-digit' }
   if (sameDay(start, end)) return { hour: 'numeric', minute: '2-digit' }
   if (end - start <= 7 * DAY_MS) return { month: 'short', day: 'numeric', hour: 'numeric' }
   if (end - start <= 400 * DAY_MS) return { month: 'short', day: 'numeric' }
@@ -150,27 +155,101 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
   const windowMs = RANGES.find((r) => r.key === range)!.ms
   const end = windowEnd ?? rows[rows.length - 1].t
   const start = windowMs === null ? -Infinity : end - windowMs
-  const shown = rows.filter((r) => r.t >= start && r.t <= end)
-  const domain = fitDomain(shown[0].t, shown[shown.length - 1].t)
+  const inWindow = rows.filter((r) => r.t >= start && r.t <= end)
+
+  // Zooming (pinch, Ctrl + scroll, or − / +) overrides the range's view until reset.
+  const [zoom, setZoom] = useState<Domain | null>(null)
+  const bounds = fitDomain(rows[0].t, rows[rows.length - 1].t)
+  const domain = zoom ?? fitDomain(inWindow[0].t, inWindow[inWindow.length - 1].t)
+  const shown = zoom ? rows.filter((r) => r.t >= domain[0] && r.t <= domain[1]) : inWindow
   const ticks = TICK_FRACTIONS.map((f) => domain[0] + (domain[1] - domain[0]) * f)
   const tickOpts = tickFormat(domain)
   const earlier = rows.filter((r) => r.t < start)
   const later = rows.filter((r) => r.t > end)
 
+  const chartRef = useRef<HTMLDivElement>(null)
+  const view = useRef({ domain, bounds })
+  useEffect(() => {
+    view.current = { domain, bounds }
+  })
+
+  const applyZoom = (d: Domain) => {
+    view.current.domain = d // wheel events can arrive faster than re-renders
+    setZoom(isFullView(d, view.current.bounds) ? null : d)
+  }
+
+  // Gestures: pinch or Ctrl + wheel zooms at the cursor; a horizontal swipe or Shift + wheel pans.
+  // Plain vertical scrolling is left alone so the page still scrolls.
+  useEffect(() => {
+    const el = chartRef.current
+    if (!el) return
+    const plot = () => (el.querySelector('.recharts-cartesian-grid') ?? el).getBoundingClientRect()
+    const anchorAt = (clientX: number) => {
+      const r = plot()
+      return Math.min(1, Math.max(0, (clientX - r.left) / r.width))
+    }
+
+    const onWheel = (e: WheelEvent) => {
+      const { domain: d, bounds: b } = view.current
+      const scale = e.deltaMode === 1 ? 16 : 1 // line-based wheels report lines, not pixels
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault()
+        const factor = Math.min(2, Math.max(0.5, Math.exp(e.deltaY * scale * 0.01)))
+        applyZoom(zoomAt(d, factor, anchorAt(e.clientX), b))
+        return
+      }
+      const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX
+      if (Math.abs(dx) > Math.abs(e.shiftKey ? 0 : e.deltaY) && !isFullView(d, b)) {
+        e.preventDefault()
+        applyZoom(panBy(d, ((dx * scale) / plot().width) * (d[1] - d[0]), b))
+      }
+    }
+
+    // Safari reports trackpad pinches as gesture events instead of Ctrl + wheel.
+    type Gesture = Event & { scale: number; clientX: number }
+    let gestureStart: Domain | null = null
+    const onGestureStart = (e: Event) => {
+      e.preventDefault()
+      gestureStart = view.current.domain
+    }
+    const onGestureChange = (e: Event) => {
+      const g = e as Gesture
+      if (!gestureStart) return
+      e.preventDefault()
+      applyZoom(zoomAt(gestureStart, 1 / g.scale, anchorAt(g.clientX), view.current.bounds))
+    }
+
+    el.addEventListener('wheel', onWheel, { passive: false })
+    el.addEventListener('gesturestart', onGestureStart)
+    el.addEventListener('gesturechange', onGestureChange)
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('gesturestart', onGestureStart)
+      el.removeEventListener('gesturechange', onGestureChange)
+    }
+  }, [])
+
   function pick(r: Range) {
     setRange(r)
     setWindowEnd(null)
+    setZoom(null)
   }
 
   function goEarlier() {
+    if (zoom) return applyZoom(panBy(domain, -(domain[1] - domain[0]) * PAN_FRACTION, bounds))
     setWindowEnd(earlier[earlier.length - 1].t)
   }
 
   function goLater() {
+    if (zoom) return applyZoom(panBy(domain, (domain[1] - domain[0]) * PAN_FRACTION, bounds))
     // Show as many later tests as fit in one window, starting from the next one.
     const reach = later[0].t + windowMs!
     setWindowEnd(later.filter((r) => r.t <= reach).pop()!.t)
   }
+
+  const canGoEarlier = zoom ? domain[0] > bounds[0] : earlier.length > 0
+  const canGoLater = zoom ? domain[1] < bounds[1] : later.length > 0
+  const fullyZoomedIn = domain[1] - domain[0] <= Math.min(4 * 60_000, bounds[1] - bounds[0])
 
   return (
     <section className="trends">
@@ -210,20 +289,39 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
             </button>
           ))}
         </div>
-        {windowMs !== null && (
-          <div className="pager">
-            <button onClick={goEarlier} disabled={earlier.length === 0} aria-label="Earlier tests">
-              ←
-            </button>
-            <button onClick={goLater} disabled={later.length === 0} aria-label="Later tests">
-              →
-            </button>
-          </div>
-        )}
+        <div className="pager">
+          <button onClick={() => applyZoom(zoomAt(domain, ZOOM_STEP, 0.5, bounds))} disabled={!zoom} aria-label="Zoom out">
+            −
+          </button>
+          <button onClick={() => applyZoom(zoomAt(domain, 1 / ZOOM_STEP, 0.5, bounds))} disabled={fullyZoomedIn} aria-label="Zoom in">
+            +
+          </button>
+          {(windowMs !== null || zoom) && (
+            <>
+              <button onClick={goEarlier} disabled={!canGoEarlier} aria-label="Earlier">
+                ←
+              </button>
+              <button onClick={goLater} disabled={!canGoLater} aria-label="Later">
+                →
+              </button>
+            </>
+          )}
+        </div>
       </div>
       <p className="muted window-label">
-        {formatSpan(shown[0].t, shown[shown.length - 1].t)} · {shown.length} {shown.length === 1 ? 'test' : 'tests'}
+        {zoom ? formatSpan(domain[0], domain[1]) : shown.length ? formatSpan(shown[0].t, shown[shown.length - 1].t) : ''}
+        {' · '}
+        {shown.length} {shown.length === 1 ? 'test' : 'tests'}
+        {zoom && (
+          <>
+            {' · '}
+            <button className="link" onClick={() => setZoom(null)}>
+              Reset zoom
+            </button>
+          </>
+        )}
       </p>
+      <p className="muted window-label">Pinch or Ctrl + scroll on the chart to zoom. Swipe sideways to move.</p>
       <ul className="legend">
         <li>
           <span className="swatch dot" /> Counted test
@@ -242,7 +340,7 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
           <span className="swatch line guide" /> CDC guide: below this is below average for your age and sex
         </li>
       </ul>
-      <div className="chart" role="img" aria-label="Chart of stands in 30 seconds for each test over time, with trend line and CDC guide">
+      <div className="chart" ref={chartRef} role="img" aria-label="Chart of stands in 30 seconds for each test over time, with trend line and CDC guide">
         <ResponsiveContainer width="100%" height={260}>
           <ComposedChart data={rows} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
             <CartesianGrid vertical={false} stroke="var(--grid)" />
