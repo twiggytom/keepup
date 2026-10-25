@@ -44,6 +44,6 @@ Format:
 - Rejected: saving a 10 fps landmark series per trial (about 30-100 KB each). Trade-off: past tests cannot be re-scored if the metric formulas change.
 
 ## 2026-10-24: Trend rules
-- Why (user's choices): a trend needs 3 counted sessions. Low-quality sessions (quality score < 70) are plotted greyed out but left out of the fit. No projected date for crossing the CDC threshold on the user's screens; that belongs in the Phase 4 report. Phase 3 is backend only (`GET /api/trends`); the History UI is left to the frontend redesign.
+- Why (user's choices): a trend needs 3 counted sessions. Low-quality sessions (quality score < 70) are plotted greyed out but left out of the fit. No projected date for crossing the CDC threshold on the user's screens; that belongs in the Phase 4 report. The History page shows the trend tiles and chart using the existing styles; the Figma redesign can restyle it later.
 - Also excluded from the fit: not-counted sessions and arm-used sessions (scored 0, not comparable to standard trials). A fitted change smaller than the noise band (3 stands, from the published minimal detectable change) reads as "steady".
 - Rejected: fitting every session; numpy (a few points don't need it).
