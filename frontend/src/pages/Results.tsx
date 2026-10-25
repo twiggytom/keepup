@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, type TestSession } from '../api/client'
+import { hasMetrics } from '../analysis/metrics'
+import MovementSummary from '../components/MovementSummary'
 
 export default function Results() {
   const { id } = useParams()
@@ -55,6 +57,8 @@ export default function Results() {
           ))}
         </ul>
       )}
+
+      {hasMetrics(s.metrics) && s.valid && <MovementSummary metrics={s.metrics} />}
 
       <div className="actions">
         <Link to="/test" className="button">

@@ -52,6 +52,11 @@ export interface SessionMetrics {
   quality_score: number
 }
 
+/** Sessions recorded before Phase 2 have an empty metrics object. */
+export function hasMetrics(m: object): m is SessionMetrics {
+  return (m as Partial<SessionMetrics>).version === 1
+}
+
 export function computeMetrics(samples: FrameSample[], events: RepEvent[], flags: QualityFlags): SessionMetrics {
   return {
     version: 1,
