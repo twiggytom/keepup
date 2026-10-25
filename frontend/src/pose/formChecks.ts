@@ -1,17 +1,12 @@
+import { FORM } from '../config/thresholds'
 import { angle, dist, LM, midpoint, moreVisibleSide, sideLandmarks, type Point, type Side } from './geometry'
-
-export const VISIBILITY_MIN = 0.6
-// Wrists farther than this (in torso lengths) from the shoulder midpoint = arms not crossed.
-const ARMS_CROSSED_MAX_DIST = 0.75
-// Horizontal shoulder separation / torso length below this = side-on or roughly 45°.
-const SIDE_ON_MAX_RATIO = 0.6
-const ARMS_FLAG_MIN_S = 0.5
-const OUT_OF_FRAME_MIN_S = 0.5
-const LOW_LIGHT_MEAN_VISIBILITY = 0.5
 
 export interface FrameAnalysis {
   side: Side
   extension: number // mean of knee and hip angle, degrees
+  kneeDeg: number
+  trunkLeanDeg: number // hip-to-shoulder line vs vertical, 0 = upright
+  sway: number // shoulder-midpoint x relative to ankle-midpoint x, in torso lengths
   bodyVisible: boolean // shoulder, hip, knee, ankle on the near side, all inside the frame
   armsCrossed: boolean
   sideOn: boolean
@@ -20,30 +15,43 @@ export interface FrameAnalysis {
 
 const inFrame = (p: Point) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1
 
-export function analyzeFrame(lm: Point[]): FrameAnalysis {
-  const side = moreVisibleSide(lm)
-  const { shoulder, hip, knee, ankle } = sideLandmarks(lm, side)
-  const keypoints = [shoulder, hip, knee, ankle]
-  const bodyVisible = keypoints.every((p) => (p.visibility ?? 0) >= VISIBILITY_MIN && inFrame(p))
+/**
+ * `aspect` is video width / height. MediaPipe normalizes x by width and y by height,
+ * so x is scaled by the aspect ratio to make angles and distances true to life.
+ */
+export function analyzeFrame(raw: Point[], aspect = 1): FrameAnalysis {
+  const side = moreVisibleSide(raw)
+  const near = sideLandmarks(raw, side)
+  const bodyVisible = Object.values(near).every((p) => (p.visibility ?? 0) >= FORM.visibilityMin && inFrame(p))
 
-  const knee_ = angle(hip, knee, ankle)
-  const hip_ = angle(shoulder, hip, knee)
+  const lm = raw.map((p) => ({ ...p, x: p.x * aspect }))
+  const { shoulder, hip, knee, ankle } = sideLandmarks(lm, side)
+  const kneeDeg = angle(hip, knee, ankle)
+  const hipDeg = angle(shoulder, hip, knee)
 
   const shoulderMid = midpoint(lm[LM.leftShoulder], lm[LM.rightShoulder])
-  const torso = Math.max(dist(shoulderMid, midpoint(lm[LM.leftHip], lm[LM.rightHip])), 1e-6)
-  const wrists = [lm[LM.leftWrist], lm[LM.rightWrist]].filter((w) => (w.visibility ?? 0) >= 0.3)
+  const hipMid = midpoint(lm[LM.leftHip], lm[LM.rightHip])
+  const ankleMid = midpoint(lm[LM.leftAnkle], lm[LM.rightAnkle])
+  const torso = Math.max(dist(shoulderMid, hipMid), 1e-6)
+
+  const wrists = [lm[LM.leftWrist], lm[LM.rightWrist]].filter((w) => (w.visibility ?? 0) >= FORM.wristVisibilityMin)
   // A wrist hidden behind the body (common side-on) is treated as crossed.
-  const armsCrossed = wrists.every((w) => dist(w, shoulderMid) / torso <= ARMS_CROSSED_MAX_DIST)
+  const armsCrossed = wrists.every((w) => dist(w, shoulderMid) / torso <= FORM.armsCrossedMaxTorso)
 
   const shoulderSpread = Math.abs(lm[LM.leftShoulder].x - lm[LM.rightShoulder].x) / torso
-  const meanVisibility = lm.reduce((s, p) => s + (p.visibility ?? 0), 0) / lm.length
+  const meanVisibility = raw.reduce((s, p) => s + (p.visibility ?? 0), 0) / raw.length
+  // y grows downwards, so hip.y - shoulder.y is positive when upright.
+  const trunkLeanDeg = (Math.atan2(Math.abs(shoulderMid.x - hipMid.x), hipMid.y - shoulderMid.y) * 180) / Math.PI
 
   return {
     side,
-    extension: (knee_ + hip_) / 2,
+    extension: (kneeDeg + hipDeg) / 2,
+    kneeDeg,
+    trunkLeanDeg,
+    sway: (shoulderMid.x - ankleMid.x) / torso,
     bodyVisible,
     armsCrossed,
-    sideOn: shoulderSpread <= SIDE_ON_MAX_RATIO,
+    sideOn: shoulderSpread <= FORM.sideOnMaxRatio,
     meanVisibility,
   }
 }
@@ -80,8 +88,8 @@ export class FormMonitor {
 
     if (!frame || !frame.bodyVisible) {
       this.outRun += dt
-      if (this.outRun >= OUT_OF_FRAME_MIN_S) this.outTotal += dt
-      return this.outRun >= OUT_OF_FRAME_MIN_S ? 'out_of_frame' : null
+      if (this.outRun >= FORM.outOfFrameMinS) this.outTotal += dt
+      return this.outRun >= FORM.outOfFrameMinS ? 'out_of_frame' : null
     }
     this.outRun = 0
     this.visSum += frame.meanVisibility
@@ -89,7 +97,7 @@ export class FormMonitor {
 
     if (!frame.armsCrossed) {
       this.armsRun += dt
-      if (this.armsRun >= ARMS_FLAG_MIN_S) {
+      if (this.armsRun >= FORM.armsFlagMinS) {
         this.armsTotal += dt
         this.usedArms = true
         return 'arms'
@@ -108,7 +116,7 @@ export class FormMonitor {
       arms_uncrossed_s: round(this.armsTotal),
       used_arms: this.usedArms,
       multiple_people: this.multiple,
-      low_light: seen > 0 && meanVis < LOW_LIGHT_MEAN_VISIBILITY,
+      low_light: seen > 0 && meanVis < FORM.lowLightMeanVisibility,
       mean_visibility: round(meanVis),
       side: seen ? (this.sides.left >= this.sides.right ? 'left' : 'right') : null,
       frames: this.frames,

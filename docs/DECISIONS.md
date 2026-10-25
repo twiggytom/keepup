@@ -38,3 +38,7 @@ Format:
 ## 2026-10-24: Movement-quality and wobble analysis after the MVP
 - Why: needs reliable rep segmentation first. Landmarks are saved now so it can run on past data later.
 - Rejected: building it into the MVP.
+
+## 2026-10-24: Movement metrics now; landmark traces are not stored
+- Why: the user asked for speed per stand, fatigue, wobble/steadiness and a session quality score now, and decided a saved landmark trace is not needed. Metrics are computed in the browser from in-memory per-frame samples and only the summary numbers are saved. This replaces "Store landmarks and metrics" and "Movement-quality and wobble analysis after the MVP" above.
+- Rejected: saving a 10 fps landmark series per trial (about 30-100 KB each). Trade-off: past tests cannot be re-scored if the metric formulas change.
