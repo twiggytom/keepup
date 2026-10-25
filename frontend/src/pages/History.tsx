@@ -1,26 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type TestSession } from '../api/client'
-
-const CHART_SESSIONS = 10
-const shortDate = (iso: string) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' })
-
-function trendText(sessions: TestSession[]): string | null {
-  const valid = sessions.filter((s) => s.valid)
-  if (valid.length < 2) return null
-  const first = valid[0]
-  const last = valid[valid.length - 1]
-  const since = new Date(first.started_at).toLocaleDateString([], { month: 'long' })
-  const d = last.reps - first.reps
-  if (d === 0) return `Same as in ${since}.`
-  return `${d > 0 ? 'Up' : 'Down'} ${Math.abs(d)} ${Math.abs(d) === 1 ? 'stand' : 'stands'} since ${since}.`
-}
+import { api, type TestSession, type Trends } from '../api/client'
+import TrendSummary from '../components/TrendSummary'
 
 export default function History() {
   const [sessions, setSessions] = useState<TestSession[] | null>(null)
+  const [trends, setTrends] = useState<Trends | null>(null)
 
   useEffect(() => {
     api.listSessions().then(setSessions, () => setSessions([]))
+    api.getTrends().then(setTrends, () => setTrends(null))
   }, [])
 
   if (!sessions) return <p className="center">Loading…</p>
@@ -40,68 +29,18 @@ export default function History() {
       </section>
     )
 
-  // The API returns newest first; the chart reads left to right in time.
-  const chart = sessions.slice(0, CHART_SESSIONS).reverse()
-  const guide = sessions.find((s) => s.valid && s.norm_applicable && s.cdc_threshold !== null)?.cdc_threshold ?? null
-  // Headroom above the tallest bar leaves space for its number label.
-  const scaleMax = Math.max(16, guide ? guide + 2 : 0, ...chart.map((s) => s.reps + 2))
-  const height = (n: number) => `${(n / scaleMax) * 100}%`
-  const trend = trendText(chart)
-
   return (
     <div className="history-page">
-      <div>
-        <h1>Your results</h1>
-        {trend && <p className="lead">{trend}</p>}
-      </div>
+      <h1>Your results</h1>
 
-      <section className="card">
-        <h2>Stands in 30 seconds</h2>
-        <div
-          className="bars"
-          role="img"
-          aria-label={`Bar chart of stands per test for your last ${chart.length} tests${guide ? `; the CDC guide is ${guide}` : ''}.`}
-        >
-          {guide !== null && (
-            <>
-              <div className="guide-line" style={{ bottom: height(guide) }} />
-              <span className="guide-label" style={{ bottom: height(guide) }}>
-                CDC guide: {guide}
-              </span>
-            </>
-          )}
-          {chart.map((s) => (
-            <div
-              key={s.id}
-              className={`bar ${!s.valid ? 'low' : s.below_threshold ? 'below' : ''}`}
-            >
-              {s.reps}
-              <div style={{ height: height(s.reps) }} />
-            </div>
-          ))}
-        </div>
-        <div className="bar-dates">
-          {chart.map((s) => (
-            <span key={s.id}>{shortDate(s.started_at)}</span>
-          ))}
-        </div>
-        <div className="legend">
-          <span>
-            <i style={{ background: 'var(--primary)' }} />
-            At or above guide
-          </span>
-          <span>
-            <i style={{ background: 'var(--below)' }} />
-            Below guide
-          </span>
-          <span>
-            <i style={{ background: 'var(--low-conf)' }} />
-            Low confidence
-          </span>
-        </div>
-      </section>
+      {trends && trends.points.length > 0 && (
+        <section className="card">
+          <TrendSummary trends={trends} />
+        </section>
+      )}
 
       <section className="card table-card">
+        <h2>All tests</h2>
         <table className="history">
           <thead>
             <tr>

@@ -123,7 +123,7 @@ export default function Results() {
               <span key={n}>{n}</span>
             ))}
           </div>
-          <div className="legend">
+          <div className="gauge-legend">
             <span>
               <i style={{ background: 'var(--below-bg)' }} />
               Below guide (under {threshold})
