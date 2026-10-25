@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type TestSession } from '../api/client'
+import { api, type TestSession, type Trends } from '../api/client'
+import TrendSummary from '../components/TrendSummary'
 
 export default function History() {
   const [sessions, setSessions] = useState<TestSession[] | null>(null)
+  const [trends, setTrends] = useState<Trends | null>(null)
 
   useEffect(() => {
     api.listSessions().then(setSessions, () => setSessions([]))
+    api.getTrends().then(setTrends, () => setTrends(null))
   }, [])
 
   if (!sessions) return <p className="center">Loading…</p>
@@ -28,6 +31,8 @@ export default function History() {
   return (
     <section className="card">
       <h1>Your results</h1>
+      {trends && trends.points.length > 0 && <TrendSummary trends={trends} />}
+      <h2>All tests</h2>
       <table className="history">
         <thead>
           <tr>
