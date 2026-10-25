@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .db import init_db
-from .routers import auth, profile, sessions
+from .routers import auth, profile, sessions, trends
 
 
 @asynccontextmanager
@@ -23,7 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (auth.router, profile.router, sessions.router):
+for router in (auth.router, profile.router, sessions.router, trends.router):
     app.include_router(router, prefix="/api")
 
 
