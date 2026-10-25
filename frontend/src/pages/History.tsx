@@ -10,39 +10,48 @@ export default function History() {
   }, [])
 
   if (!sessions) return <p className="center">Loading…</p>
+  if (sessions.length === 0)
+    return (
+      <section className="card wide empty">
+        <h1>Your results</h1>
+        <p>Your first result starts here.</p>
+        <div className="actions">
+          <Link to="/test" className="button primary pill">
+            Take first test
+          </Link>
+          <Link to="/onboarding" className="button pill ghost">
+            My profile
+          </Link>
+        </div>
+      </section>
+    )
   return (
     <section className="card">
       <h1>Your results</h1>
-      {sessions.length === 0 ? (
-        <p>
-          No tests yet. <Link to="/test">Take your first test</Link>.
-        </p>
-      ) : (
-        <table className="history">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Stands</th>
-              <th>CDC guide</th>
-              <th></th>
+      <table className="history">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Stands</th>
+            <th>CDC guide</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {sessions.map((s) => (
+            <tr key={s.id} className={s.valid ? '' : 'invalid'}>
+              <td>{new Date(s.started_at).toLocaleDateString()}</td>
+              <td>{s.reps}</td>
+              <td>
+                {!s.valid ? 'Not counted' : s.below_threshold === null ? '—' : s.below_threshold ? 'Below' : 'At or above'}
+              </td>
+              <td>
+                <Link to={`/results/${s.id}`}>View</Link>
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {sessions.map((s) => (
-              <tr key={s.id} className={s.valid ? '' : 'invalid'}>
-                <td>{new Date(s.started_at).toLocaleDateString()}</td>
-                <td>{s.reps}</td>
-                <td>
-                  {!s.valid ? 'Not counted' : s.below_threshold === null ? '—' : s.below_threshold ? 'Below' : 'At or above'}
-                </td>
-                <td>
-                  <Link to={`/results/${s.id}`}>View</Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+          ))}
+        </tbody>
+      </table>
     </section>
   )
 }

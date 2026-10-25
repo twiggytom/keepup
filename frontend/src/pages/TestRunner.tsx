@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { computeMetrics, type FrameSample } from '../analysis/metrics'
 import { api } from '../api/client'
+import statusOk from '../assets/status-ok.svg'
+import statusPending from '../assets/status-pending.svg'
 import { analyzeFrame, FormMonitor, type FrameAnalysis } from '../pose/formChecks'
 import { dist, LM } from '../pose/geometry'
 import { getPoseLandmarker } from '../pose/landmarker'
@@ -29,6 +31,13 @@ interface Checks {
 }
 
 const NO_CHECKS: Checks = { visible: false, sideOn: false, armsCrossed: false, seated: false }
+
+const CHECK_LABELS: Record<keyof Checks, string> = {
+  visible: 'Whole body in view',
+  sideOn: 'Side facing the camera',
+  armsCrossed: 'Arms crossed on chest',
+  seated: 'Sitting on the chair',
+}
 
 const HINTS: Record<keyof Checks, string> = {
   visible: 'Please move so your whole body, from your shoulders to your feet, is on the screen.',
@@ -291,23 +300,33 @@ export default function TestRunner() {
 
   return (
     <section className="runner">
-      <div className="stage">
-        <video ref={videoRef} playsInline muted className="mirror" />
-        <canvas ref={canvasRef} className="mirror overlay" />
+      <div className="camera-card">
+        <div className="stage">
+          <video ref={videoRef} playsInline muted className="mirror" />
+          <canvas ref={canvasRef} className="mirror overlay" />
 
-        {phase === 'loading' && <div className="stage-msg">Starting camera…</div>}
-        {phase === 'countdown' && <div className="stage-msg huge">{countdown}</div>}
-        {phase === 'running' && (
-          <>
-            <div className="timer">{remaining}</div>
-            {showCount && <div className="live-count">{count}</div>}
-            {liveIssue && <div className="live-issue">{liveIssue}</div>}
-          </>
-        )}
-        {phase === 'saving' && <div className="stage-msg">Saving your result…</div>}
+          {phase === 'loading' && <div className="stage-msg">Starting camera…</div>}
+          {phase === 'countdown' && <div className="stage-msg huge">{countdown}</div>}
+          {phase === 'running' && (
+            <>
+              <div className="timer">{remaining}</div>
+              {showCount && <div className="live-count">{count}</div>}
+              {liveIssue && <div className="live-issue">{liveIssue}</div>}
+            </>
+          )}
+          {phase === 'saving' && <div className="stage-msg">Saving your result…</div>}
+        </div>
+        <p className="camera-note">Your camera view</p>
       </div>
 
       <aside className="panel">
+        {phase === 'loading' && (
+          <>
+            <h1>30-second chair stand test</h1>
+            <p className="lead">One moment. We'll help you get ready next.</p>
+          </>
+        )}
+
         {phase === 'error' && (
           <>
             <p className="error">{error}</p>
@@ -319,22 +338,26 @@ export default function TestRunner() {
 
         {phase === 'setup' && (
           <>
-            <h2>Get into position</h2>
+            <h1>Get into position</h1>
+            <p className="lead">Sit down. Cross your arms. Turn sideways.</p>
             <ul className="checks">
-              <li className={checks.visible ? 'ok' : ''}>Whole body in view</li>
-              <li className={checks.sideOn ? 'ok' : ''}>Side facing the camera</li>
-              <li className={checks.armsCrossed ? 'ok' : ''}>Arms crossed on chest</li>
-              <li className={checks.seated ? 'ok' : ''}>Sitting on the chair</li>
+              {(Object.keys(CHECK_LABELS) as (keyof Checks)[]).map((key) => (
+                <li key={key} className={checks[key] ? 'ok' : ''}>
+                  <img src={checks[key] ? statusOk : statusPending} alt="" />
+                  {checks[key] && '✓ '}
+                  {CHECK_LABELS[key]}
+                </li>
+              ))}
             </ul>
-            <button className="primary big" disabled={!ready} onClick={start}>
+            <button className={ready ? 'primary big' : 'big waiting'} disabled={!ready} onClick={start}>
               {ready ? 'Start' : 'Waiting for position…'}
             </button>
-            <button className="link" onClick={() => speak(SETUP_INSTRUCTIONS, { interrupt: true })}>
-              Hear the instructions again
+            <button className="quiet" onClick={() => speak(SETUP_INSTRUCTIONS, { interrupt: true })}>
+              Hear instructions
             </button>
             <label className="toggle">
               <input type="checkbox" checked={showCount} onChange={(e) => setShowCount(e.target.checked)} />
-              Show the count during the test
+              Show my count
             </label>
           </>
         )}

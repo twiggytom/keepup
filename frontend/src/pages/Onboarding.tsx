@@ -34,10 +34,10 @@ export default function Onboarding() {
   }
 
   return (
-    <section className="card narrow">
+    <section className="card wide">
       <h1>{profile ? 'Your profile' : 'A few details first'}</h1>
-      <p className="muted">Your age and sex are used to compare your result with CDC guidelines.</p>
-      <form onSubmit={submit} className="stack">
+      <p className="lead">Age and sex help compare your result with CDC guidelines.</p>
+      <form onSubmit={submit} className="form-grid">
         <label>
           First name (optional)
           <input value={form.name} onChange={(e) => set('name', e.target.value)} />
@@ -58,24 +58,24 @@ export default function Onboarding() {
           </div>
         </fieldset>
         <label>
-          Anything else we should know? (optional)
+          Health notes (optional)
           <textarea
             rows={3}
-            placeholder="For example: I use a cane, I had a fall last year, I take blood pressure medicine"
+            placeholder="For example: a cane, a past fall, or medicines."
             value={form.health_notes}
             onChange={(e) => set('health_notes', e.target.value)}
           />
         </label>
         <label>
-          Family member or caregiver email (optional)
+          Family or caregiver email (optional)
           <input
             type="email"
             value={form.caregiver_email ?? ''}
             onChange={(e) => set('caregiver_email', e.target.value)}
           />
         </label>
-        {error && <p className="error">{error}</p>}
-        <button className="primary" disabled={busy}>
+        {error && <p className="error full">{error}</p>}
+        <button className="primary full" disabled={busy}>
           Save
         </button>
       </form>

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Link, Navigate, Route, Routes } from 'react-router-dom'
+import logo from './assets/logo.svg'
 import { useAuth } from './auth'
 import History from './pages/History'
 import Home from './pages/Home'
@@ -22,13 +23,18 @@ export default function App() {
     <>
       <header className="topbar">
         <Link to="/" className="brand">
+          <img src={logo} alt="" />
           KeepUp
         </Link>
         {user && (
           <nav>
-            <Link to="/history">History</Link>
-            <Link to="/onboarding">Profile</Link>
-            <button className="link" onClick={logout}>
+            <Link to="/history" className="nav-pill">
+              History
+            </Link>
+            <Link to="/onboarding" className="nav-pill">
+              Profile
+            </Link>
+            <button className="nav-pill" onClick={logout}>
               Sign out
             </button>
           </nav>
