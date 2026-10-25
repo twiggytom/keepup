@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   CartesianGrid,
   ComposedChart,
@@ -12,6 +13,45 @@ import {
 import type { Exclusion, Trend, TrendPoint, Trends } from '../api/client'
 
 const DAY_MS = 86_400_000
+const MIN_PAD_MS = 30 * 60_000
+
+type Range = 'day' | 'week' | 'month' | 'year' | 'all'
+
+const RANGES: { key: Range; label: string; ms: number | null }[] = [
+  { key: 'day', label: 'Day', ms: DAY_MS },
+  { key: 'week', label: 'Week', ms: 7 * DAY_MS },
+  { key: 'month', label: 'Month', ms: 30 * DAY_MS },
+  { key: 'year', label: 'Year', ms: 365 * DAY_MS },
+  { key: 'all', label: 'All', ms: null },
+]
+
+/** Fit the axis to the shown tests, padded by 5% (at least 30 minutes) so edge points are not on the axis. */
+function fitDomain(first: number, last: number): [number, number] {
+  const pad = Math.max((last - first) * 0.05, MIN_PAD_MS)
+  return [first - pad, last + pad]
+}
+
+const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString()
+
+function tickFormat([start, end]: [number, number]): Intl.DateTimeFormatOptions {
+  if (sameDay(start, end)) return { hour: 'numeric', minute: '2-digit' }
+  if (end - start <= 7 * DAY_MS) return { month: 'short', day: 'numeric', hour: 'numeric' }
+  if (end - start <= 400 * DAY_MS) return { month: 'short', day: 'numeric' }
+  return { month: 'short', year: 'numeric' }
+}
+
+/** Describe the shown tests' time span, e.g. "Oct 24, 2026, 4:05 PM – 5:10 PM". */
+function formatSpan(first: number, last: number): string {
+  const date: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
+  const time: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit' }
+  const d = (t: number, o: Intl.DateTimeFormatOptions) => new Date(t).toLocaleString(undefined, o)
+  if (first === last) return d(first, { ...date, ...time })
+  if (sameDay(first, last)) return `${d(first, { ...date, ...time })} – ${d(last, time)}`
+  return `${d(first, date)} – ${d(last, date)}`
+}
+
+// Ticks sit inside the axis ends so edge labels are never clipped.
+const TICK_FRACTIONS = [0.1, 0.3, 0.5, 0.7, 0.9]
 
 const EXCLUSION_TEXT: Record<Exclusion, string> = {
   not_counted: 'Not counted (out of view of the camera)',
@@ -103,6 +143,35 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
   const hasTrend = rows.some((r) => r.trend !== undefined)
   const s = (n: number) => `${n.toFixed(1)} s`
 
+  // A range picks which tests are shown: those in the `windowMs` before `windowEnd`, which is
+  // always a test's time. The axis then fits the shown tests so close-together tests spread out.
+  const [range, setRange] = useState<Range>('all')
+  const [windowEnd, setWindowEnd] = useState<number | null>(null) // null = the latest test
+  const windowMs = RANGES.find((r) => r.key === range)!.ms
+  const end = windowEnd ?? rows[rows.length - 1].t
+  const start = windowMs === null ? -Infinity : end - windowMs
+  const shown = rows.filter((r) => r.t >= start && r.t <= end)
+  const domain = fitDomain(shown[0].t, shown[shown.length - 1].t)
+  const ticks = TICK_FRACTIONS.map((f) => domain[0] + (domain[1] - domain[0]) * f)
+  const tickOpts = tickFormat(domain)
+  const earlier = rows.filter((r) => r.t < start)
+  const later = rows.filter((r) => r.t > end)
+
+  function pick(r: Range) {
+    setRange(r)
+    setWindowEnd(null)
+  }
+
+  function goEarlier() {
+    setWindowEnd(earlier[earlier.length - 1].t)
+  }
+
+  function goLater() {
+    // Show as many later tests as fit in one window, starting from the next one.
+    const reach = later[0].t + windowMs!
+    setWindowEnd(later.filter((r) => r.t <= reach).pop()!.t)
+  }
+
   return (
     <section className="trends">
       <h2>Your trends</h2>
@@ -133,6 +202,28 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
       )}
 
       <h3>Stands over time</h3>
+      <div className="chart-controls">
+        <div className="segmented" role="group" aria-label="Time range">
+          {RANGES.map((r) => (
+            <button key={r.key} className={range === r.key ? 'primary' : ''} aria-pressed={range === r.key} onClick={() => pick(r.key)}>
+              {r.label}
+            </button>
+          ))}
+        </div>
+        {windowMs !== null && (
+          <div className="pager">
+            <button onClick={goEarlier} disabled={earlier.length === 0} aria-label="Earlier tests">
+              ←
+            </button>
+            <button onClick={goLater} disabled={later.length === 0} aria-label="Later tests">
+              →
+            </button>
+          </div>
+        )}
+      </div>
+      <p className="muted window-label">
+        {formatSpan(shown[0].t, shown[shown.length - 1].t)} · {shown.length} {shown.length === 1 ? 'test' : 'tests'}
+      </p>
       <ul className="legend">
         <li>
           <span className="swatch dot" /> Counted test
@@ -159,8 +250,11 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
               dataKey="t"
               type="number"
               scale="time"
-              domain={[(min: number) => min - DAY_MS, (max: number) => max + DAY_MS]}
-              tickFormatter={(t: number) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              domain={domain}
+              allowDataOverflow
+              ticks={ticks}
+              interval={0}
+              tickFormatter={(t: number) => new Date(t).toLocaleString(undefined, tickOpts)}
               tickLine={false}
               tickMargin={8}
               axisLine={{ stroke: 'var(--grid)' }}
