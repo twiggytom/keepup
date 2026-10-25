@@ -309,14 +309,50 @@ export default function TestRunner() {
           {phase === 'countdown' && <div className="stage-msg huge">{countdown}</div>}
           {phase === 'running' && (
             <>
-              <div className="timer">{remaining}</div>
-              {showCount && <div className="live-count">{count}</div>}
-              {liveIssue && <div className="live-issue">{liveIssue}</div>}
+              <div className="timer">
+                <strong>{remaining}</strong>
+                seconds left
+              </div>
+              {showCount && (
+                <div className="live-count">
+                  <strong>{count}</strong>
+                  stands
+                </div>
+              )}
+              {liveIssue && (
+                <div className="live-issue">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 9v4" />
+                    <path d="M12 17h.01" />
+                    <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+                  </svg>
+                  {liveIssue}
+                </div>
+              )}
             </>
           )}
           {phase === 'saving' && <div className="stage-msg">Saving your result…</div>}
         </div>
-        <p className="camera-note">Your camera view</p>
+        {phase === 'running' ? (
+          <div className="progress">
+            <div className="progress-labels">
+              <span>Started</span>
+              <span>{TEST_SECONDS} seconds</span>
+            </div>
+            <div
+              className="progress-track"
+              role="progressbar"
+              aria-label="Time elapsed"
+              aria-valuemin={0}
+              aria-valuemax={TEST_SECONDS}
+              aria-valuenow={TEST_SECONDS - remaining}
+            >
+              <div style={{ width: `${((TEST_SECONDS - remaining) / TEST_SECONDS) * 100}%` }} />
+            </div>
+          </div>
+        ) : (
+          <p className="camera-note">Your camera view</p>
+        )}
       </div>
 
       <aside className="panel">
@@ -364,8 +400,22 @@ export default function TestRunner() {
 
         {phase === 'running' && (
           <>
-            <p className="lead">Stand up fully, then sit all the way down. Repeat as many times as you can.</p>
-            <button onClick={abort}>Stop test</button>
+            <h1>Keep going</h1>
+            <p className="lead">Stand up fully, then sit all the way down.</p>
+            <ol className="steps">
+              {['Feet flat on the floor', 'Arms crossed on chest', 'Stand all the way up'].map((step, i) => (
+                <li key={step}>
+                  <span className="step">{i + 1}</span>
+                  {step}
+                </li>
+              ))}
+            </ol>
+            <p className="cue-note">
+              You'll hear <strong>“Halfway”</strong> at 15 seconds and <strong>“Stop”</strong> at the end.
+            </p>
+            <button className="big" onClick={abort}>
+              Stop test
+            </button>
           </>
         )}
       </aside>
