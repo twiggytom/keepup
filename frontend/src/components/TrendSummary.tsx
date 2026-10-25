@@ -18,6 +18,7 @@ const ZOOM_STEP = 2 // the − and + buttons halve or double the visible time
 const PAN_FRACTION = 0.8 // arrows move a zoomed view by this share of its width
 const HOVER_RADIUS_PX = 14 // details show only when the cursor is this close to a point
 const TOOLTIP_WIDTH_PX = 240
+const EXTENSION_OPACITY = 0.35 // trend line beyond the first and last counted tests
 
 type Range = 'day' | 'week' | 'month' | 'year' | 'all'
 
@@ -301,11 +302,33 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
   const canGoLater = zoom ? domain[1] < bounds[1] : later.length > 0
   const fullyZoomedIn = domain[1] - domain[0] <= Math.min(4 * 60_000, bounds[1] - bounds[0])
 
-  // Lines get extra points at the view's edges so the CDC guide spans the whole window.
+  // The fitted line between the first and last counted tests, continued (faded) to the view's
+  // edges so it spans the whole window.
+  const fitRows = rows.filter((r) => r.trend !== undefined)
+  const fitStart = fitRows[0]
+  const fitEnd = fitRows[fitRows.length - 1]
+  const trendAt = (t: number) => {
+    if (!fitStart) return undefined
+    const span = fitEnd.t - fitStart.t
+    const slope = span ? (fitEnd.trend! - fitStart.trend!) / span : 0
+    return fitStart.trend! + slope * (t - fitStart.t)
+  }
+
+  // Lines get extra points at the view's edges so the CDC guide and trend span the whole window.
+  const leftT = Math.min(domain[0], rows[0].t)
+  const rightT = Math.max(domain[1], rows[rows.length - 1].t)
+  const extendsLeft = !!fitStart && leftT < fitStart.t
+  const extendsRight = !!fitEnd && rightT > fitEnd.t
   const lineRows = [
-    { t: Math.min(domain[0], rows[0].t), cdc: rows[0].cdc },
-    ...rows.map((r) => ({ t: r.t, cdc: r.cdc, trend: r.trend })),
-    { t: Math.max(domain[1], rows[rows.length - 1].t), cdc: rows[rows.length - 1].cdc },
+    { t: leftT, cdc: rows[0].cdc, trendBefore: extendsLeft ? trendAt(leftT) : undefined },
+    ...rows.map((r) => ({
+      t: r.t,
+      cdc: r.cdc,
+      trend: r.trend,
+      trendBefore: extendsLeft && r === fitStart ? r.trend : undefined,
+      trendAfter: extendsRight && r === fitEnd ? r.trend : undefined,
+    })),
+    { t: rightT, cdc: rows[rows.length - 1].cdc, trendAfter: extendsRight ? trendAt(rightT) : undefined },
   ]
   const Hollow = dotShape(false, setHover)
   const Filled = dotShape(true, setHover)
@@ -395,6 +418,11 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
             <span className="swatch line" /> Trend
           </li>
         )}
+        {hasTrend && (extendsLeft || extendsRight) && (
+          <li>
+            <span className="swatch line faded" /> Trend continued beyond your tests
+          </li>
+        )}
         <li>
           <span className="swatch line guide" /> CDC guide: below this is below average for your age and sex
         </li>
@@ -419,6 +447,7 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
             />
             <YAxis
               domain={[0, yMax]}
+              allowDataOverflow
               allowDecimals={false}
               tickLine={false}
               axisLine={false}
@@ -442,6 +471,19 @@ export default function TrendSummary({ trends }: { trends: Trends }) {
               activeDot={false}
               isAnimationActive={false}
             />
+            {(['trendBefore', 'trendAfter'] as const).map((key) => (
+              <Line
+                key={key}
+                dataKey={key}
+                stroke="var(--chart)"
+                strokeOpacity={EXTENSION_OPACITY}
+                strokeWidth={2}
+                connectNulls
+                dot={false}
+                activeDot={false}
+                isAnimationActive={false}
+              />
+            ))}
             <Scatter data={rows.filter((r) => !r.point.in_fit)} dataKey="reps" shape={Hollow} isAnimationActive={false} />
             <Scatter data={rows.filter((r) => r.point.in_fit)} dataKey="reps" shape={Filled} isAnimationActive={false} />
           </ComposedChart>

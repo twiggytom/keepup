@@ -146,6 +146,7 @@ summary { cursor: pointer; color: var(--primary); font-weight: 600; }
 .swatch.dot.hollow { background: var(--surface); border: 2px solid var(--muted); }
 .swatch.line { width: 18px; height: 2px; background: var(--chart); }
 .swatch.line.guide { background: var(--muted); }
+.swatch.line.faded { opacity: 0.35; }
 .chart-controls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
 .segmented { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .segmented button, .pager button { padding: 0.5rem 0.9rem; min-height: 48px; }
