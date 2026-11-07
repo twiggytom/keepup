@@ -1,4 +1,4 @@
-# keepup
+# keepup - CalHacks 2026
 Conducts the CDC STEADI 30-second chair stand test in the browser and analyzes results.
 
 Pose detection runs on-device with MediaPipe Pose Landmarker; video never leaves the browser.
